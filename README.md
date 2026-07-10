@@ -1,5 +1,9 @@
 # keyhound
 
+[![tests](https://github.com/myanptl/keyhound/actions/workflows/tests.yml/badge.svg)](https://github.com/myanptl/keyhound/actions/workflows/tests.yml)
+[![python >= 3.10](https://img.shields.io/badge/python-%3E%3D3.10-blue)](https://www.python.org)
+[![zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](#)
+
 A dependency-free Python CLI that scans codebases — and full git history — for leaked API keys and secrets.
 
 Built after I found a live leaked key in one of my own projects during a security audit. Pure Python standard library, zero dependencies, one file to run.

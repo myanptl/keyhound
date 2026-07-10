@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pytest:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python -m keyhound.cli:*)",
+      "Bash(keyhound:*)",
+      "Bash(pip install -e .:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git add:*)",
+      "Bash(git log:*)"
+    ],
+    "deny": [
+      "Read(.env*)",
+      "Edit(.env*)",
+      "Write(.env*)"
+    ]
+  }
+}
