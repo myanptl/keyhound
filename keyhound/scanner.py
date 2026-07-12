@@ -15,6 +15,13 @@ SKIP_EXTENSIONS = {
     ".pdf", ".doc", ".docx", ".xls", ".xlsx",
     ".pyc", ".class", ".o", ".so", ".dylib", ".dll",
     ".lock",
+    # ML models and wasm: large, binary, and a rich source of entropy false
+    # positives when read as text.
+    ".wasm", ".task", ".tflite", ".onnx", ".pt", ".pth", ".h5", ".safetensors",
+    ".bin", ".pb", ".npy", ".npz",
+    # fonts and media
+    ".woff", ".woff2", ".ttf", ".otf", ".eot",
+    ".mp4", ".mov", ".webm", ".mp3", ".wav", ".ico",
 }
 
 SKIP_DIRS = {
@@ -84,8 +91,29 @@ def scan_lines(
     return findings
 
 
+def is_binary(path: Path, sniff_bytes: int = 8192) -> bool:
+    """True if the file looks binary, judged the way git and grep judge it.
+
+    An extension list can never keep up (.wasm, .task, .tflite, .onnx, .bin, and
+    whatever ships next year). A NUL byte in the first few KB is the real signal,
+    and it costs one small read.
+
+    This matters because reading a model file as text with errors="ignore" turns
+    it into megabytes of garbage, and entropy detection then fires on nearly every
+    line. On one project that produced ~4,000 false findings, which is more than
+    enough to bury a real credential.
+    """
+    try:
+        with path.open("rb") as fh:
+            return b"\x00" in fh.read(sniff_bytes)
+    except (PermissionError, OSError):
+        return True  # unreadable: treat as skippable rather than crash
+
+
 def scan_file(path: Path, no_entropy: bool = False) -> list[Finding]:
     if path.suffix.lower() in SKIP_EXTENSIONS:
+        return []
+    if is_binary(path):
         return []
     try:
         lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
