@@ -6,3 +6,6 @@ build/
 .pytest_cache/
 .venv/
 .claude-flow/
+
+# graphify analysis output (generated, not source)
+graphify-out/
