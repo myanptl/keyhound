@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>keyhound · find leaked keys before you push</title>
+  <meta name="description" content="A secret scanner for your code and git history. 25 credential patterns plus entropy checks. Pure Python, zero dependencies." />
+  <meta name="theme-color" content="#f7f7f6" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="keyhound" />
+  <meta property="og:description" content="Find leaked API keys in your code and git history. Zero dependencies." />
+  <meta property="og:image" content="/og-image.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      color-scheme: light;
+      /* Near-white at chroma 0, ink black, one vermilion accent for the hound
+         and the command. Terminal severity colours stay inside the terminal. */
+      --bg: oklch(0.975 0.001 40);
+      --surface: oklch(1 0 0);
+      --line: oklch(0.89 0.004 40);
+      --ink: oklch(0.19 0.006 40);
+      --ink-2: oklch(0.42 0.008 40);
+      --ink-3: oklch(0.53 0.008 40);
+      --accent: oklch(0.6 0.19 35);
+      --accent-soft: oklch(0.6 0.19 35 / 0.1);
+
+      --term: oklch(0.2 0.006 40);
+      --term-ink: oklch(0.9 0.004 40);
+      --term-dim: oklch(0.62 0.008 40);
+      --t-high: oklch(0.7 0.17 25);
+      --t-med: oklch(0.82 0.13 85);
+      --t-ok: oklch(0.78 0.14 150);
+
+      --sans: 'Schibsted Grotesk', system-ui, sans-serif;
+      --mono: 'DM Mono', ui-monospace, Menlo, monospace;
+      --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+    a { color: inherit; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+    code, .mono { font-family: var(--mono); }
+
+    .wrap { max-width: 1040px; margin: 0 auto; padding: 0 28px; }
+    header.top { display: flex; align-items: center; gap: 16px; height: 56px; border-bottom: 1px solid var(--line); }
+    .brand { display: flex; align-items: center; gap: 9px; font-family: var(--mono); font-weight: 500; font-size: 15px; text-decoration: none; }
+    .brand svg { color: var(--accent); }
+    header.top nav { margin-left: auto; display: flex; gap: 4px; }
+    header.top nav a { padding: 6px 10px; border-radius: 5px; font-size: 14px; color: var(--ink-2); text-decoration: none; transition: background 140ms, color 140ms; }
+    header.top nav a:hover { background: var(--accent-soft); color: var(--ink); }
+
+    .hero { display: grid; grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr); gap: 48px; align-items: center; padding: 64px 0 56px; }
+    h1 { margin: 0; font-size: clamp(32px, 2rem + 1.6vw, 46px); line-height: 1.08; font-weight: 600; letter-spacing: -0.03em; text-wrap: balance; }
+    .lede { margin: 16px 0 28px; max-width: 42ch; color: var(--ink-2); font-size: 17px; text-wrap: pretty; }
+
+    .install {
+      display: flex; align-items: center; gap: 12px; max-width: 460px;
+      padding: 0 6px 0 14px; height: 46px;
+      background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+      font-family: var(--mono); font-size: 13.5px;
+    }
+    .install .p { color: var(--accent); user-select: none; }
+    .install code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+    .copy { flex: none; height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); font: 500 13px var(--sans); color: var(--ink-2); cursor: pointer; transition: color 140ms, border-color 140ms; }
+    .copy:hover { color: var(--ink); border-color: var(--ink-3); }
+    .copy[data-done] { color: var(--accent); border-color: var(--accent); }
+    .facts { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 18px 0 0; padding: 0; list-style: none; font-size: 13.5px; color: var(--ink-3); }
+    .facts li::before { content: '·'; margin-right: 8px; color: var(--accent); }
+    .facts li:first-child::before { display: none; }
+
+    /* Terminal: real keyhound output, replayed line by line */
+    .term { background: var(--term); color: var(--term-ink); border-radius: 10px; overflow: hidden; font: 12px/1.7 var(--mono); box-shadow: 0 1px 0 oklch(0 0 0 / 0.04), 0 18px 40px -20px oklch(0.2 0.02 40 / 0.35); }
+    .term-bar { display: flex; gap: 6px; padding: 12px 14px; border-bottom: 1px solid oklch(1 0 0 / 0.07); }
+    .term-bar i { width: 10px; height: 10px; border-radius: 50%; background: oklch(1 0 0 / 0.14); }
+    .term pre { margin: 0; padding: 16px 18px 20px; overflow-x: auto; font: inherit; }
+    .term .l { white-space: pre; animation: line 1ms linear both; animation-delay: calc(var(--i) * 140ms + 700ms); }
+    .term .cmd { color: var(--term-ink); }
+    .term .cmd b { font-weight: 400; color: var(--accent); }
+    .term .typed { display: inline-block; overflow: hidden; vertical-align: bottom; white-space: pre; animation: type 600ms steps(14) both 100ms; }
+    .d { color: var(--term-dim); } .h { color: var(--t-high); } .m { color: var(--t-med); } .ok { color: var(--t-ok); } .bold { font-weight: 500; color: oklch(0.98 0 0); }
+    @keyframes line { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes type { from { width: 0; } to { width: 14ch; } }
+
+    section { padding: 56px 0; border-top: 1px solid var(--line); }
+    .sec { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 40px; }
+    h2 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.015em; }
+    .sec-intro { margin: 8px 0 0; color: var(--ink-2); font-size: 14px; }
+
+    .patterns { columns: 3 200px; column-gap: 32px; margin: 0; padding: 0; list-style: none; font-size: 14px; }
+    .patterns li { break-inside: avoid; display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+    .patterns .sev { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+    .patterns .sev.high { color: var(--accent); }
+
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    td { padding: 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+    td:first-child { width: 42%; padding-right: 20px; font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+    td:last-child { color: var(--ink-2); }
+
+    .ci { margin: 0; padding: 16px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; font: 13px/1.7 var(--mono); overflow-x: auto; }
+    .ci .c { color: var(--ink-3); }
+    .codes { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 14px 0 0; padding: 0; list-style: none; font-size: 14px; color: var(--ink-2); }
+    .codes b { font-family: var(--mono); font-weight: 500; color: var(--ink); margin-right: 6px; }
+
+    footer { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 24px 0 40px; border-top: 1px solid var(--line); font-size: 13.5px; color: var(--ink-3); }
+    footer a { color: var(--ink-2); }
+
+    @media (max-width: 880px) {
+      .hero { grid-template-columns: minmax(0, 1fr); gap: 36px; padding: 40px 0; }
+      .sec { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+    }
+    @media (max-width: 560px) {
+      .wrap { padding: 0 16px; }
+      td:first-child { white-space: normal; width: 48%; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .term .l, .term .typed { animation: none; }
+      .term .typed { width: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <a class="brand" href="/" aria-label="keyhound home">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+          <circle cx="7.5" cy="7.5" r="4.5" stroke="currentColor" stroke-width="1.7" />
+          <path d="M11 11l5 5M13.5 13.5l-1.7 1.7M15.6 15.6l-1.4 1.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+        </svg>
+        keyhound
+      </a>
+      <nav aria-label="Main">
+        <a href="#catches">What it catches</a>
+        <a href="#ci">CI</a>
+        <a href="https://github.com/myanptl/keyhound">GitHub</a>
+      </nav>
+    </header>
+
+    <main>
+      <div class="hero">
+        <div>
+          <h1>Find leaked keys before you push them.</h1>
+          <p class="lede">keyhound scans your code, and your git history if you ask, for API keys, tokens and private keys. It prints where each one is, with the secret masked.</p>
+          <div class="install">
+            <span class="p" aria-hidden="true">$</span>
+            <code id="cmd">pipx install git+https://github.com/myanptl/keyhound</code>
+            <button class="copy" type="button" data-copy="cmd">Copy</button>
+          </div>
+          <ul class="facts">
+            <li>Python 3.9+</li>
+            <li>Zero dependencies</li>
+            <li>MIT licence</li>
+          </ul>
+        </div>
+
+        <div class="term" role="img" aria-label="Example keyhound run that finds an AWS key, a Stripe key and a Slack webhook in two files">
+          <div class="term-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+<pre aria-hidden="true"><span class="cmd"><b>~/shop-api $</b> <span class="typed">keyhound --git</span></span>
+<span class="l" style="--i:1"><span class="bold">keyhound v0.1.0</span></span>
+<span class="l" style="--i:2"><span class="d">target:</span> ~/shop-api  <span class="d">·  25 patterns  ·  entropy on  ·  git history (last 100)</span></span>
+<span class="l" style="--i:3"> </span>
+<span class="l" style="--i:4"><span class="bold">.env.example</span></span>
+<span class="l" style="--i:5">  <span class="h">HIGH   </span> <span class="d">L1     </span> Slack Webhook URL            <span class="d">http********************</span></span>
+<span class="l" style="--i:6">  <span class="m">MEDIUM </span> <span class="d">L1     </span> High Entropy String          <span class="d">com/********************</span></span>
+<span class="l" style="--i:7"> </span>
+<span class="l" style="--i:8"><span class="bold">config.py</span></span>
+<span class="l" style="--i:9">  <span class="h">HIGH   </span> <span class="d">L2     </span> AWS Access Key ID            <span class="d">AKIA****************</span></span>
+<span class="l" style="--i:10">  <span class="h">HIGH   </span> <span class="d">L3     </span> Stripe Secret Key            <span class="d">sk_l********************</span></span>
+<span class="l" style="--i:11"> </span>
+<span class="l" style="--i:12"><span class="d">────────────────────────────────────────────</span></span>
+<span class="l" style="--i:13">  <span class="bold">4 findings</span> in 2 files <span class="d">(0.04s)</span></span>
+<span class="l" style="--i:14">  <span class="h">high 3</span>  ·  <span class="m">medium 1</span></span></pre>
+        </div>
+      </div>
+
+      <section id="catches">
+        <div class="sec">
+          <div>
+            <h2>What it catches</h2>
+            <p class="sec-intro">25 patterns, plus a Shannon-entropy check for random-looking strings that match none of them. Turn that off with <code>--no-entropy</code>.</p>
+          </div>
+          <ul class="patterns">
+            <li>AWS Access Key ID <span class="sev high">high</span></li>
+            <li>AWS Secret Access Key <span class="sev high">high</span></li>
+            <li>GitHub PAT (classic) <span class="sev high">high</span></li>
+            <li>GitHub OAuth Token <span class="sev high">high</span></li>
+            <li>GitHub Actions Token <span class="sev high">high</span></li>
+            <li>GitHub Refresh Token <span class="sev high">high</span></li>
+            <li>Google API Key <span class="sev high">high</span></li>
+            <li>Stripe Secret Key <span class="sev high">high</span></li>
+            <li>Stripe Publishable Key <span class="sev">medium</span></li>
+            <li>SendGrid API Key <span class="sev high">high</span></li>
+            <li>Slack Bot Token <span class="sev high">high</span></li>
+            <li>Slack User Token <span class="sev high">high</span></li>
+            <li>Slack Webhook URL <span class="sev high">high</span></li>
+            <li>RSA Private Key <span class="sev high">high</span></li>
+            <li>EC Private Key <span class="sev high">high</span></li>
+            <li>OpenSSH Private Key <span class="sev high">high</span></li>
+            <li>PGP Private Key Block <span class="sev high">high</span></li>
+            <li>OpenAI API Key <span class="sev high">high</span></li>
+            <li>Anthropic API Key <span class="sev high">high</span></li>
+            <li>Twilio Account SID <span class="sev">medium</span></li>
+            <li>JWT Token <span class="sev">medium</span></li>
+            <li>npm Token <span class="sev high">high</span></li>
+            <li>PyPI API Token <span class="sev high">high</span></li>
+            <li>Generic Password <span class="sev">medium</span></li>
+            <li>Generic API Key <span class="sev">medium</span></li>
+          </ul>
+        </div>
+      </section>
+
+      <section>
+        <div class="sec">
+          <div>
+            <h2>Options</h2>
+            <p class="sec-intro">Run <code>keyhound --help</code> for the full list.</p>
+          </div>
+          <table>
+            <tbody>
+              <tr><td>keyhound ./src</td><td>Scan a folder or a single file. Defaults to the current folder.</td></tr>
+              <tr><td>--git</td><td>Also scan git history, the last 100 commits by default.</td></tr>
+              <tr><td>--max-commits N</td><td>How far back <code>--git</code> goes.</td></tr>
+              <tr><td>--severity high</td><td>Only report findings at or above this level.</td></tr>
+              <tr><td>--output json</td><td>Machine-readable output.</td></tr>
+              <tr><td>-q</td><td>Findings only, no banner or summary.</td></tr>
+              <tr><td>--no-color</td><td>Plain output. <code>NO_COLOR</code> works too.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="ci">
+        <div class="sec">
+          <div>
+            <h2>In CI</h2>
+            <p class="sec-intro">The exit code fails the build when a key turns up.</p>
+          </div>
+          <div>
+<pre class="ci"><span class="c"># .github/workflows/secrets.yml</span>
+- uses: actions/checkout@v4
+  with: { fetch-depth: 0 }
+- run: pipx install git+https://github.com/myanptl/keyhound
+- run: keyhound --git --severity high</pre>
+            <ul class="codes">
+              <li><b>0</b>clean</li>
+              <li><b>1</b>findings</li>
+              <li><b>2</b>error</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>keyhound is MIT licensed.</span>
+      <a href="https://github.com/myanptl/keyhound">Source on GitHub</a>
+      <span>Masks every secret it prints.</span>
+    </footer>
+  </div>
+
+  <script>
+    document.querySelectorAll('[data-copy]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var text = document.getElementById(btn.dataset.copy).textContent;
+        navigator.clipboard.writeText(text).then(function () {
+          btn.textContent = 'Copied';
+          btn.setAttribute('data-done', '');
+          setTimeout(function () { btn.textContent = 'Copy'; btn.removeAttribute('data-done'); }, 1800);
+        }, function () { /* clipboard blocked: leave the command selectable */ });
+      });
+    });
+  </script>
+</body>
+</html>
